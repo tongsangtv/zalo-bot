@@ -222,7 +222,7 @@ bot.onText(/\/xoadip/, (msg) => {
 });
 
 // Hẹn giờ 8h sáng giờ Việt Nam, quét mỗi ngày một lần
-cronNho.schedule("* * * * *", quetVaNhac, { timezone: "Asia/Ho_Chi_Minh" });
+cronNho.schedule("0 8 * * *", quetVaNhac, { timezone: "Asia/Ho_Chi_Minh" });
 console.log("Module nhac hen da san sang.");
 
 // ===== WEB SERVER (WEBHOOK) =====
