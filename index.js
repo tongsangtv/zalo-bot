@@ -46,8 +46,114 @@ const NGAY_LE_CO_DINH = [
   { ten: "Giáng sinh", ngay: 25, thang: 12 },
 ];
 
-// Tết Âm lịch: kiểm tra lại lịch âm mỗi năm rồi sửa bảng này
-const TET_AM_LICH = { 2026: [17, 2], 2027: [6, 2] };
+// Tự động tính ngày Mùng 1 Tết Âm lịch theo múi giờ Việt Nam (UTC+7)
+function jdFromDate(dd, mm, yy) {
+  const a = Math.floor((14 - mm) / 12);
+  const y = yy + 4800 - a;
+  const m = mm + 12 * a - 3;
+  return (
+    dd +
+    Math.floor((153 * m + 2) / 5) +
+    365 * y +
+    Math.floor(y / 4) -
+    Math.floor(y / 100) +
+    Math.floor(y / 400) -
+    32045
+  );
+}
+
+function jdToDate(jd) {
+  const a = jd + 32044;
+  const b = Math.floor((4 * a + 3) / 146097);
+  const c = a - Math.floor((b * 146097) / 4);
+  const d = Math.floor((4 * c + 3) / 1461);
+  const e = c - Math.floor((1461 * d) / 4);
+  const m = Math.floor((5 * e + 2) / 153);
+  const day = e - Math.floor((153 * m + 2) / 5) + 1;
+  const month = m + 3 - 12 * Math.floor(m / 10);
+  const year = b * 100 + d - 4800 + Math.floor(m / 10);
+  return [day, month, year];
+}
+
+function getNewMoonDay(k, timeZone) {
+  const T = k / 1236.85;
+  const T2 = T * T;
+  const T3 = T2 * T;
+  const dr = Math.PI / 180;
+  let Jd1 = 2415020.75933 + 29.53058868 * k + 0.0001178 * T2 - 0.000000155 * T3;
+  Jd1 += 0.00033 * Math.sin((166.56 + 132.87 * T - 0.009173 * T2) * dr);
+  const M = 359.2242 + 29.10535608 * k - 0.0000333 * T2 - 0.00000347 * T3;
+  const Mpr = 306.0253 + 385.81691806 * k + 0.0107306 * T2 + 0.00001236 * T3;
+  const F = 21.2964 + 390.67050646 * k - 0.0016528 * T2 - 0.00000239 * T3;
+  let C1 =
+    (0.1734 - 0.000393 * T) * Math.sin(M * dr) +
+    0.0021 * Math.sin(2 * dr * M) -
+    0.4068 * Math.sin(Mpr * dr) +
+    0.0161 * Math.sin(dr * 2 * Mpr) -
+    0.0004 * Math.sin(dr * 3 * Mpr) +
+    0.0104 * Math.sin(dr * 2 * F) -
+    0.0051 * Math.sin(dr * (M + Mpr)) -
+    0.0074 * Math.sin(dr * (M - Mpr)) +
+    0.0004 * Math.sin(dr * (2 * F + M)) -
+    0.0004 * Math.sin(dr * (2 * F - M)) -
+    0.0006 * Math.sin(dr * (2 * F + Mpr)) +
+    0.001 * Math.sin(dr * (2 * F - Mpr)) +
+    0.0005 * Math.sin(dr * (2 * Mpr + M));
+  const deltat =
+    T < -11
+      ? 0.001 + 0.000839 * T + 0.0002261 * T2 - 0.00000845 * T3 - 0.000000081 * T * T3
+      : -0.000278 + 0.000265 * T + 0.000262 * T2;
+  return Math.floor(Jd1 + C1 - deltat + 0.5 + timeZone / 24);
+}
+
+function getSunLongitude(jdn, timeZone) {
+  const T = (jdn - 2451545.5 - timeZone / 24) / 36525;
+  const T2 = T * T;
+  const dr = Math.PI / 180;
+  const M = 357.5291 + 35999.0503 * T - 0.0001559 * T2 - 0.00000048 * T * T2;
+  const L0 = 280.46645 + 36000.76983 * T + 0.0003032 * T2;
+  let DL = (1.9146 - 0.004817 * T - 0.000014 * T2) * Math.sin(dr * M);
+  DL += (0.019993 - 0.000101 * T) * Math.sin(dr * 2 * M) + 0.00029 * Math.sin(dr * 3 * M);
+  let L = (L0 + DL) * dr;
+  L = L - Math.PI * 2 * Math.floor(L / (Math.PI * 2));
+  return Math.floor((L / Math.PI) * 6);
+}
+
+function getLunarMonth11(yy, timeZone) {
+  const off = jdFromDate(31, 12, yy) - 2415021;
+  const k = Math.floor(off / 29.530588853);
+  let nm = getNewMoonDay(k, timeZone);
+  if (getSunLongitude(nm, timeZone) >= 9) nm = getNewMoonDay(k - 1, timeZone);
+  return nm;
+}
+
+function getLeapMonthOffset(a11, timeZone) {
+  const k = Math.floor((a11 - 2415021.076998695) / 29.530588853 + 0.5);
+  let last = 0;
+  let i = 1;
+  let arc = getSunLongitude(getNewMoonDay(k + i, timeZone), timeZone);
+  do {
+    last = arc;
+    i++;
+    arc = getSunLongitude(getNewMoonDay(k + i, timeZone), timeZone);
+  } while (arc !== last && i < 14);
+  return i - 1;
+}
+
+function ngayTetAmLich(namDuong) {
+  const timeZone = 7;
+  const a11 = getLunarMonth11(namDuong - 1, timeZone);
+  const b11 = getLunarMonth11(namDuong, timeZone);
+  let k = Math.floor(0.5 + (a11 - 2415021.076998695) / 29.530588853);
+  let thangGiengOffset = 2;
+  if (b11 - a11 > 365) {
+    const leapOff = getLeapMonthOffset(a11, timeZone);
+    if (leapOff <= 2) thangGiengOffset = 3;
+  }
+  const jdTet = getNewMoonDay(k + thangGiengOffset, timeZone);
+  const [ngay, thang, nam] = jdToDate(jdTet);
+  return new Date(nam, thang - 1, ngay);
+}
 
 function taiDuLieuNho() {
   try {
@@ -77,6 +183,11 @@ function homNayVN() {
   return bayGio;
 }
 
+// Số ngày từ hôm nay tới một mốc Date cụ thể
+function demNgayDen(mucTieu) {
+  return Math.round((mucTieu - homNayVN()) / 86400000);
+}
+
 // Số ngày từ hôm nay tới lần xuất hiện gần nhất của ngày/tháng đó (tự lăn sang năm sau)
 function demNgayNho(ngay, thang) {
   const homNay = homNayVN();
@@ -96,15 +207,19 @@ async function quetVaNhac() {
   const duLieu = taiDuLieuNho();
   const homNay = homNayVN();
   const namHienTai = homNay.getFullYear();
+  let tet = ngayTetAmLich(namHienTai);
+  if (tet < homNay) tet = ngayTetAmLich(namHienTai + 1);
+  const conLaiTet = demNgayDen(tet);
+
   for (const [chatId, nd] of Object.entries(duLieu)) {
     if (!nd.remind) continue;
     const dong = [];
-    const suKien = [...NGAY_LE_CO_DINH];
-    const tet = TET_AM_LICH[namHienTai];
-    if (tet) suKien.push({ ten: "Tết Âm lịch", ngay: tet[0], thang: tet[1] });
-    for (const s of suKien) {
+    for (const s of NGAY_LE_CO_DINH) {
       const conLai = demNgayNho(s.ngay, s.thang);
       if ([0, 1, 7].includes(conLai)) dong.push(dongNhac(s.ten, conLai));
+    }
+    if ([0, 1, 7].includes(conLaiTet)) {
+      dong.push(dongNhac("Tết Âm lịch", conLaiTet));
     }
     for (const o of nd.occasions) {
       const conLai = demNgayNho(o.ngay, o.thang);
@@ -224,6 +339,27 @@ bot.onText(/\/xoadip/, (msg) => {
 // Hẹn giờ 8h sáng giờ Việt Nam, quét mỗi ngày một lần
 cronNho.schedule("0 8 * * *", quetVaNhac, { timezone: "Asia/Ho_Chi_Minh" });
 console.log("Module nhac hen da san sang.");
+
+// Hẹn giờ đánh thức bot lúc 7:55 sáng giờ Việt Nam
+// Cron này ping service lên để Render không sleep (dành cho free tier)
+cronNho.schedule("55 7 * * *", async () => {
+  try {
+    const url = process.env.WEBHOOK_URL || process.env.RENDER_EXTERNAL_URL;
+    if (url) {
+      const http = require("http");
+      http.get(`http://${url}/`, (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => console.log(`[Wake-up] Ping status: ${res.statusCode}`));
+      }).on("error", (e) => console.error(`[Wake-up] Ping error: ${e.message}`));
+    } else {
+      console.log("[Wake-up] Chua co WEBHOOK_URL/RENDER_EXTERNAL_URL - bot se sleep tiep");
+    }
+  } catch (err) {
+    console.error(`[Wake-up] Loi cron: ${err.message}`);
+  }
+}, { timezone: "Asia/Ho_Chi_Minh" });
+console.log("Module wake-up da san sang.");
 
 // ===== WEB SERVER (WEBHOOK) =====
 const app = express();
